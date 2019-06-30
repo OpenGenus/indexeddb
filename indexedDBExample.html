@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<head>
+<script>
+
+
+  // In the following line, you should include the prefixes of implementations you want to test.
+  window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
+  // DON'T use "var indexedDB = ..." if you're not in a function.
+  // Moreover, you may need references to some window.IDB* objects:
+  window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction || window.msIDBTransaction || {READ_WRITE: "readwrite"}; // This line should only be needed if it is needed to support the object's constants for older browsers
+  window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange || window.msIDBKeyRange;
+  // (Mozilla has never prefixed these objects, so we don't need window.mozIDB*)
+
+
+  if (!window.indexedDB) {
+    window.alert("Your browser doesn't support a stable version of IndexedDB. Such and such feature will not be available.");
+  }
+
+function init(){
+
+  // OPENING A DATABASE
+  // Let us open our database
+  var request = window.indexedDB.open("MyTestDatabase", 3);
+  // The second parameter is the version of the database
+
+  // GENERATING HANDLERS
+  request.onerror = function(event) {
+  // Do something with request.errorCode!
+    alert("Error faced while opening database");
+  };
+  request.onsuccess = function(event) {
+    // Do something with request.result!
+    db = event.target.result;
+    
+    // HANDLING ERRORS
+    db.onerror = function(event) {
+      // Generic error handler for all errors targeted at this database's requests!
+      alert("Database error: " + event.target.errorCode);
+    };
+
+  };
+
+  // CREATING OR UPDATING THE VERSION OF DATABASE
+
+  request.onupgradeneeded = function(event) { 
+    // Save the IDBDatabase interface 
+    var db = event.target.result;
+
+    // Create an objectStore for this database to hold info about our books.
+    // We'll use "isbn" as our key path because we know its unique for every book
+    var objectStore = db.createObjectStore("books", { keyPath: "isbn" });
+
+    // Create an index to search books by name.
+    objectStore.createIndex("name", "name", {unique:false});
+
+    // Create an index to search books by author
+    objectStore.createIndex("author", "author", {unique:false});
+
+    // Create an index to search books by manufactured year
+    objectStore.createIndex("year", "year", {unique:false});
+
+    // Use transaction oncomplete to make sure the objectStore crration
+    // is finished before adding data into it.
+    objectStore.transaction.oncomplete = function(event) {
+      
+    };
+  };
+
+  document.getElementById('addButton').onclick = function(e) {
+
+    var bname = document.getElementById('nameInput').value;
+    var bauthor = document.getElementById('authorInput').value;
+    var byear = document.getElementById('yearInput').value;
+    var bisbn = document.getElementById('isbnInput').value;
+
+    const book_item = {
+      name: bname,
+      author: bauthor,
+      year: byear,
+      isbn: bisbn
+    }
+
+    var transaction = db.transaction(["books"], "readwrite");
+
+    transaction.oncomplete = function(event) {
+      console.log("all done with transaction");
+    };
+
+    transaction.onerror = function(event){
+      console.dir(event);
+    };
+
+    var booksObjectStore = transaction.objectStore("books");
+
+    var request = booksObjectStore.add(book_item);
+
+    request.onsuccess = function(event){
+      console.log("added item");
+    };
+
+    updatetable();
+
+  }
+
+  document.getElementById('delButton').onclick = function(e){
+
+    var isbn_del = document.getElementById('isbnDelInput').value;
+
+    var request = db.transaction(["books"], "readwrite").objectStore("books").delete(isbn_del);
+
+    request.onsuccess = function(event){
+      console.log(isbn_del+" deleted");
+    }
+
+    updatetable();
+  }
+
+  function updatetable(){
+
+    document.getElementById("books-table-body").innerHTML = "";
+
+    var request = db.transaction("books").objectStore("books").openCursor();
+
+    request.onerror = function(event){
+      console.dir(event);
+    };
+
+    request.onsuccess = function(event){
+
+      cursor = event.target.result;
+
+      if(cursor) {
+        document.getElementById("books-table-body").innerHTML += "<tr><td>" + cursor.value.name + "</td><td>"
+          + cursor.value.author + "</td><td>" + cursor.value.year + "</td><td>" + cursor.key + "</td></tr>";
+
+          cursor.continue();
+      }
+    };
+  }
+}
+
+</script>
+</head>
+
+<body onload="init()">
+  
+    <h1>IndexedDB Example</h1>
+
+    <p>
+        <fieldset id="addForm">
+            <legend>Add item</legend>
+            <label>Name</label>
+            <input id="nameInput">
+            <label>Author</label>
+            <input id="authorInput">
+            <label>Year</label>
+            <input id="yearInput">
+            <label>ISBN</label>
+            <input id="isbnInput">
+            <button id="addButton">Add</button>
+        </fieldset>
+    </p>
+
+    <p>
+      <fieldset id="deleteForm">
+        <legend>Delete item</legend>
+        <label>ISBN</label>
+        <input id="isbnDelInput">
+        <button id="delButton">Delete</button>
+      </fieldset>
+    </p>
+
+    <table id="books-table">
+        <thead>
+            <tr><th>Name</th><th>Author</th><th>Year</th><th>ISBN</th></tr>
+        </thead>
+        <tbody id="books-table-body">
+        </tbody>
+    </table>
+
+</body>
+</html>
+
