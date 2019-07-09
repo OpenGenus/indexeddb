@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<head>
+<script>
+
+
+  // In the following line, you should include the prefixes of implementations you want to test.
+  window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
+  // DON'T use "var indexedDB = ..." if you're not in a function.
+  // Moreover, you may need references to some window.IDB* objects:
+  window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction || window.msIDBTransaction || {READ_WRITE: "readwrite"}; // This line should only be needed if it is needed to support the object's constants for older browsers
+  window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange || window.msIDBKeyRange;
+  // (Mozilla has never prefixed these objects, so we don't need window.mozIDB*)
+
+
+  if (!window.indexedDB) {
+    window.alert("Your browser doesn't support a stable version of IndexedDB. Such and such feature will not be available.");
+  }
+
+function init(){
+
+  // OPENING A DATABASE
+  // Let us open our database
+  var request = window.indexedDB.open("MyTestDatabase", 3);
+  // The second parameter is the version of the database
+
+  // GENERATING HANDLERS
+  request.onerror = function(event) {
+  // Do something with request.errorCode!
+    alert("Error faced while opening database");
+  };
+  request.onsuccess = function(event) {
+    // Do something with request.result!
+    db = event.target.result;
+    console.log("Database set up successful");
+    
+    // HANDLING ERRORS
+    db.onerror = function(event) {
+      // Generic error handler for all errors targeted at this database's requests!
+      alert("Database error: " + event.target.errorCode);
+    };
+
+  };
+
+  // CREATING OR UPDATING THE VERSION OF DATABASE
+
+  request.onupgradeneeded = function(event) { 
+    // Save the IDBDatabase interface 
+    var db = event.target.result;
+
+    // Creating an object store to store our blobs
+                    // Keypath is an index named id and is set to autoincrement
+                    // We store image blobs in the index named 'image'
+                    var imgObjectStore = db.createObjectStore("images", { keyPath: "id", autoIncrement:true });
+                    imgObjectStore.createIndex("image", "image", {unique:false});
+
+                    // Create another store to save the video files to.
+                    var vidObjectStore = db.createObjectStore("videos", { keyPath: "name" });
+                    vidObjectStore.createIndex("mp4", "mp4", {unique:false});
+                    vidObjectStore.createIndex("webm", "webm", {unique:false});
+
+    // Use transaction oncomplete to make sure the objectStore crration
+    // is finished before adding data into it.
+    imgObjectStore.transaction.oncomplete = function(event) {
+        console.log("Created both objectStores");
+    };
+  };
+
+  document.getElementById('showImageButton').onclick = function(e) {
+
+    // Create XHR
+    var xhr = new XMLHttpRequest();
+                    xhr.open("GET", "static/images/books.jpeg", true);
+                    // Set the response type to blob
+                    xhr.responseType = 'blob';
+
+                    xhr.addEventListener("load", function() {
+                        if (xhr.status === 200) {
+                            console.log("Image retrieved by xhr");
+
+                            blob = xhr.response;
+
+                            putImageInDb(blob);
+                        }
+                    }, false);
+
+                    xhr.send();
+
+  };
+
+  document.getElementById('showVideoButton').onclick = function(e) {
+
+      console.log("fetching videos from network");
+
+      var mp4Blob = fetch('static/videos/crystal.mp4').then(response => response.blob());
+      var webmBlob = fetch('static/videos/crystal.webm').then(response => response.blob());
+
+      Promise.all([mp4Blob, webmBlob]).then(function(values) {
+        // display the video fetched from the network with displayVideo()
+        // displayVideo(values[0], values[1], video.name);
+        // store it in the IDB using storeVideo()
+        storeVideo(values[0], values[1]);
+      });
+      
+  };
+
+  // This function recieves the mp4 and webm blobs and stores it into database
+  function storeVideo(mp4Blob, webmBlob){
+
+    const vidrecord = {
+        name: "video1",
+        mp4: mp4Blob,
+        webm: webmBlob
+      }
+
+      var vidObjectStore = db.transaction(["videos"], "readwrite").objectStore("videos");
+
+      var request = vidObjectStore.add(vidrecord);
+
+      request.onsuccess = function() {
+          console.log("video added to db");
+      };
+      request.onerror = function() {
+          console.log(request.error);
+      };
+
+    getVideo();
+  }
+
+  function getVideo() {
+
+      var myObjectStore = db.transaction(["videos"], "readwrite").objectStore("videos");
+
+      var request = myObjectStore.get("video1");
+
+      request.onsuccess = function(){
+
+          if (request.result) {
+              displayVideo(request.result.mp4, request.result.webm);
+          }
+          else {
+              console.log("Error faced in getting videos from IDB");
+          }
+      };
+  }
+
+  function displayVideo(mp4Blob, webmBlob){
+
+      var mp4url = URL.createObjectURL(mp4Blob);
+      var webmurl = URL.createObjectURL(webmBlob);
+
+      const section = document.querySelector('section');
+
+    let article = document.createElement('article');
+    let h2 = document.createElement('h2');
+    h2.textContent = "your video";
+    let video = document.createElement('video');
+    video.controls = true;
+    let source1 = document.createElement('source');
+    source1.src = mp4url;
+    source1.type = 'video/mp4';
+    let source2 = document.createElement('source');
+    source2.src = webmurl;
+    source2.type = 'video/webm';
+
+    // Embed DOM elements into page
+    section.appendChild(article);
+    article.appendChild(h2);
+    article.appendChild(video);
+    video.appendChild(source1);
+    video.appendChild(source2);
+  }
+
+  function putImageInDb(blob) {
+    console.log("Putting image in IndexedDB");
+
+    var myObjectStore = db.transaction(["images"], "readwrite").objectStore("images");
+
+    // Put the blob into the object store
+    var put = myObjectStore.put(blob);
+    // The image will be put with id=1
+    console.log("Image blob added");
+
+    db.transaction(["images"], "readwrite").objectStore("images").openCursor().onsuccess = function (event) {
+
+        var cursor = event.target.result;
+        if(cursor) {
+            var imgFile = cursor.value;
+            console.log("retrieved image from db");
+
+            // Get window.URL object
+            // var URL = window.URL || window.webkitURL;
+
+            // Create and revoke ObjectURL
+            var imgURL = URL.createObjectURL(imgFile);
+
+            // Set the src to ObjectURL
+            document.getElementById("bookpic").setAttribute("src", imgURL);
+
+            // document.getElementById("bookpic").setAttribute("src", imgFile);
+            cursor.continue();
+        }
+
+    };
+}
+
+
+}
+
+</script>
+</head>
+
+<body onload="init()">
+  
+    <h1>IndexedDB Example with blobs</h1>
+        <p><button id="showImageButton">Show Image</button></p>
+        <p>Here is your picture:</p>
+        <figure>
+            <img id="bookpic">
+            <figcaption>Books caption</figcaption>
+        </figure>
+
+        <p><button id="showVideoButton">Show Video</button></p>
+        <p>Here is your video:</p>
+
+        <section></section>
+
+</body>
+</html>
+
